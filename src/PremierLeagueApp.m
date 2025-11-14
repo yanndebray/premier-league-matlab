@@ -61,32 +61,42 @@ classdef PremierLeagueApp < handle
                 season = seasons{sIdx}; key = matlab.lang.makeValidName(season);
                 if strcmp(season,'2018-2019')
                     teams = { 'Man City','Liverpool','Chelsea','Tottenham','Arsenal','Man United','Wolves','Everton','Leicester','Watford','West Ham','Crystal Palace','Newcastle','Bournemouth','Burnley','Southampton','Brighton','Cardiff','Fulham','Huddersfield'};
-                    raw = [31 29 21 23 20 19 16 15 15 14 14 13 12 13 11 9 9 10 7 3; ... % W
-                           2 7 8 1 7 9 9 8 6 8 7 7 9 6 7 12 9 4 5 7; ...               % D
-                           4 1 8 13 10 9 12 14 16 15 16 17 16 18 19 16 19 23 25 27];   % L
+                    raw = [32 30 21 23 21 19 16 15 15 14 15 14 12 13 11 9 9 10 7 3; ... % W
+                           2 7 8 2 7 9 9 9 7 8 7 5 9 7 7 12 9 4 5 7; ...               % D
+                           4 1 9 13 10 10 12 14 16 16 16 19 17 18 20 17 20 24 26 28];   % L
+                    GFvals = [95 89 63 67 73 65 47 54 51 52 52 51 42 56 45 45 35 34 34 22];
+                    GAvals = [23 22 39 39 51 54 46 46 48 59 55 53 48 65 68 65 60 69 81 76];
                 else
                     % Placeholder season with slightly varied stats
                     teams = { 'Man City','Liverpool','Chelsea','Tottenham','Arsenal','Man United','Newcastle','Brighton','Leicester','Everton','West Ham','Wolves','Burnley','Bournemouth','Southampton','Crystal Palace','Watford','Brentford','Fulham','Luton'};
                     rng(42); raw = randi([10 30],3,numel(teams));
                 end
-                MP = 37*ones(1,numel(teams));
-                standings = struct('Club',teams,'MP',num2cell(MP),'W',num2cell(raw(1,:)),'D',num2cell(raw(2,:)),'L',num2cell(raw(3,:)), ...
-                                    'GF',num2cell(randi([30 95],1,numel(teams))),'GA',num2cell(randi([20 85],1,numel(teams))));
+                MP = 38*ones(1,numel(teams));
+                if strcmp(season,'2018-2019')
+                    standings = struct('Club',teams,'MP',num2cell(MP),'W',num2cell(raw(1,:)),'D',num2cell(raw(2,:)),'L',num2cell(raw(3,:)), ...
+                                        'GF',num2cell(GFvals),'GA',num2cell(GAvals));
+                else
+                    standings = struct('Club',teams,'MP',num2cell(MP),'W',num2cell(raw(1,:)),'D',num2cell(raw(2,:)),'L',num2cell(raw(3,:)), ...
+                                        'GF',num2cell(randi([30 95],1,numel(teams))),'GA',num2cell(randi([20 85],1,numel(teams))));
+                end
                 for i=1:numel(standings)
                     standings(i).GD = standings(i).GF - standings(i).GA;
                     standings(i).Points = standings(i).W*3 + standings(i).D;
                 end
-                matchdays = 37; rng(sIdx*7);
+                matchdays = 38; rng(sIdx*7);
                 posMatrix = zeros(numel(teams),matchdays);
                 for t=1:numel(teams)
-                    if t<=2
-                        % Strong teams stable near top
-                        base = min(2 + randn(1,matchdays)/3,3);
-                        posMatrix(t,:) = max(1,round([14 base(2:end)]));
-                        posMatrix(t,1) = 14 - (t-1)*7; % start lower then rise
+                    if t==1
+                        % Man City - strong finish at 1st
+                        posMatrix(t,:) = [14 3 2 2 1 1 1 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1];
+                    elseif t==2
+                        % Liverpool - strong but 2nd
+                        posMatrix(t,:) = [8 6 4 3 2 2 2 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2];
                     else
-                        walk = cumsum(sign(randn(1,matchdays)));
-                        posMatrix(t,:) = max(min(10 + walk,20),1);
+                        % Other teams with realistic variation
+                        walk = cumsum(0.3*randn(1,matchdays));
+                        target = min(t,20); % final position roughly by standing
+                        posMatrix(t,:) = max(1,min(20,round(target + walk)));
                     end
                 end
                 % Cards & results
@@ -158,14 +168,16 @@ classdef PremierLeagueApp < handle
         end
 
         function buildLegend(app)
-            lg = uigridlayout(app.legendPanel,[1 5]);
+            lg = uigridlayout(app.legendPanel,[1 5],'Padding',[5 5 5 5],'ColumnWidth',{'1x','1x','1x','1x','1x'});
             makeBlock(lg,'Champions League',[0 76 153]/255);
             makeBlock(lg,'Europa League',[230 103 33]/255);
             makeBlock(lg,'Europa Qual',[0 155 72]/255);
             makeBlock(lg,'Relegated',[200 0 0]/255);
-            makeBlock(lg,'Other',[0.8 0.8 0.8]);
+            makeBlock(lg,'Other',[0.85 0.85 0.85]);
             function makeBlock(parent,labelText,color)
-                p = uipanel(parent,'BackgroundColor',color); uilabel(p,'Text',labelText,'HorizontalAlignment','center','FontSize',10,'FontColor','w');
+                p = uipanel(parent,'BackgroundColor',color,'BorderType','none');
+                lbl = uilabel(p,'Text',labelText,'HorizontalAlignment','center','FontSize',11,'FontColor','w','Position',[2 2 200 20]);
+                if sum(color) > 2; lbl.FontColor = 'k'; end % dark text for light background
             end
         end
 
@@ -192,7 +204,7 @@ classdef PremierLeagueApp < handle
             T = table((1:numel(clubs))',clubs,MP,W,D,L,GF,GA,GD,Pts,'VariableNames',{'Pos','Club','MP','W','D','L','GF','GA','GD','Points'});
             app.standingsTable.Data = T;
             app.standingsTable.ColumnSortable = true;
-            app.standingsTable.ColumnWidth = {35,150,40,40,40,40,45,45,45,55};
+            app.standingsTable.ColumnWidth = {40,160,45,40,40,40,45,45,50,60};
             if strcmp(app.styleMode,'uistyle'); app.updateTableStyles(); end
         end
 
@@ -262,12 +274,16 @@ classdef PremierLeagueApp < handle
             end
             html = sprintf([ ...
                 '<html><head><style>' ...
-                '.title{font-size:18px;font-weight:bold;margin-bottom:6px;}' ...
-                '.cards{margin:8px 0;font-size:12px;}' ...
-                '.res{width:24px;height:24px;display:inline-flex;justify-content:center;align-items:center;color:#fff;font-weight:bold;margin-right:2px;border-radius:4px;font-size:11px;}' ...
+                'body{font-family:Arial,sans-serif;padding:8px;margin:0;}' ...
+                '.title{font-size:20px;font-weight:bold;margin-bottom:10px;color:#000;}' ...
+                '.cards{margin:10px 0 12px 0;font-size:13px;color:#333;}' ...
+                '.cards b{color:#000;}' ...
+                '.label{font-size:11px;color:#666;margin-bottom:4px;}' ...
+                '.res{width:26px;height:26px;display:inline-flex;justify-content:center;align-items:center;color:#fff;font-weight:bold;margin-right:3px;border-radius:3px;font-size:12px;box-shadow:0 1px 2px rgba(0,0,0,0.1);}' ...
                 '</style></head><body>' ...
                 '<div class="title">%s</div>' ...
                 '<div class="cards">Red: <b>%d</b> | Yellow: <b>%d</b></div>' ...
+                '<div class="label">W/D/L trend in last 10 Matches</div>' ...
                 '<div>%s</div>' ...
                 '</body></html>'],club,c.Red,c.Yellow,blockHTML);
             app.htmlDetails.HTMLSource = html;
@@ -278,18 +294,25 @@ classdef PremierLeagueApp < handle
             cla(app.positionAxes); hold(app.positionAxes,'on');
             posMatrix = app.seasonData.Positions; mdays = 1:app.seasonData.Matchdays; clubs = {app.seasonData.Standings.Club};
             pts = arrayfun(@(x)x.Points, app.seasonData.Standings); [~,ord] = sort(pts,'descend'); clubs = clubs(ord); posMatrix = posMatrix(ord,:);
+            % Draw neutral teams first
             for i=1:numel(clubs)
-                colNeutral = [0.75 0.75 0.75];
-                colHighlight = app.C.colors.Highlight;
-                if strcmp(clubs{i},app.selectedTeam)
-                    plot(app.positionAxes, mdays, posMatrix(i,:),'-o','Color',colHighlight,'MarkerFaceColor',colHighlight,'LineWidth',2.2);
-                    text(app.positionAxes, mdays(end)+0.3, posMatrix(i,end), clubs{i},'Color',colHighlight,'FontWeight','bold');
-                else
-                    plot(app.positionAxes, mdays, posMatrix(i,:),'-','Color',colNeutral,'LineWidth',0.5);
+                if ~strcmp(clubs{i},app.selectedTeam)
+                    plot(app.positionAxes, mdays, posMatrix(i,:),'-','Color',[0.82 0.82 0.82],'LineWidth',0.6);
                 end
             end
-            app.positionAxes.YLim=[0.5 20.5]; app.positionAxes.XLim=[1 mdays(end)]; app.positionAxes.YGrid='on'; app.positionAxes.XGrid='on';
-            title(app.positionAxes,'Position By MatchDay'); hold(app.positionAxes,'off');
+            % Draw selected team on top
+            for i=1:numel(clubs)
+                if strcmp(clubs{i},app.selectedTeam)
+                    colHighlight = app.C.colors.Highlight;
+                    plot(app.positionAxes, mdays, posMatrix(i,:),'-o','Color',colHighlight,'MarkerFaceColor',colHighlight,'MarkerSize',4,'LineWidth',2.5);
+                    text(app.positionAxes, mdays(end)+0.5, posMatrix(i,end), clubs{i},'Color',colHighlight,'FontWeight','bold','FontSize',11);
+                    break;
+                end
+            end
+            app.positionAxes.YLim=[0.5 20.5]; app.positionAxes.XLim=[0.5 mdays(end)+0.5];
+            app.positionAxes.YGrid='on'; app.positionAxes.XGrid='on';
+            app.positionAxes.GridAlpha = 0.15; app.positionAxes.FontSize = 10;
+            title(app.positionAxes,'Position By MatchDay','FontSize',12); hold(app.positionAxes,'off');
         end
 
         function openTeamSite(app)

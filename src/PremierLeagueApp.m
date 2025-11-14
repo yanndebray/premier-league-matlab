@@ -1,0 +1,310 @@
+classdef PremierLeagueApp < handle
+    % PremierLeagueApp - MATLAB replica of the shown Premier League visualization
+    % Usage:
+    %   app = PremierLeagueApp;  % launches UI
+    %
+    % Notes:
+    % - Data is embedded for 2018-2019 sample season. Extend by editing loadData().
+    % - Row coloring uses uistyle (requires relatively recent MATLAB). Falls back to HTML if unavailable.
+    % - W/D/L trend shown as colored patches for last 10 matches.
+    % - This is a programmatic UI; no .mlapp dependency.
+
+    properties
+        % Top-level figure & layout sections
+        fig
+        headerPanel
+        standingsPanel
+        detailsPanel
+        plotPanel
+        legendPanel
+        % UI components
+        standingsTable
+        seasonDropDown
+        segmentGroup
+        badgeImage matlab.ui.control.Image
+        htmlDetails matlab.ui.control.HTML
+        positionAxes
+        % Data & state
+        data struct
+        seasonData struct
+        selectedSeason char = '2018-2019'
+        selectedTeam char = 'Man City'
+        styleMode char = 'uistyle' % 'uistyle' or 'html'
+        % Constant configuration (colors, thresholds)
+        C struct
+    end
+
+    methods
+        function app = PremierLeagueApp()
+            app.detectStyleMode();     % Decide styling approach
+            app.defineConstants();     % Colors & thresholds
+            app.loadData();            % Load season data
+            app.buildUI();             % Compose UI sections
+            app.updateSeason(app.selectedSeason); % Populate initial season
+            app.updateSelection(app.selectedTeam);% Populate team details
+        end
+
+        function detectStyleMode(app)
+            try
+                uistyle; %#ok<VUNUS>
+                app.styleMode = 'uistyle';
+            catch
+                app.styleMode = 'html';
+            end
+        end
+
+        function loadData(app)
+            % Load embedded seasons. Extend by adding more blocks.
+            if isempty(app.data); app.data = struct(); end
+            seasons = { '2018-2019','Sample-Next'}; % second season placeholder
+            for sIdx = 1:numel(seasons)
+                season = seasons{sIdx}; key = matlab.lang.makeValidName(season);
+                if strcmp(season,'2018-2019')
+                    teams = { 'Man City','Liverpool','Chelsea','Tottenham','Arsenal','Man United','Wolves','Everton','Leicester','Watford','West Ham','Crystal Palace','Newcastle','Bournemouth','Burnley','Southampton','Brighton','Cardiff','Fulham','Huddersfield'};
+                    raw = [31 29 21 23 20 19 16 15 15 14 14 13 12 13 11 9 9 10 7 3; ... % W
+                           2 7 8 1 7 9 9 8 6 8 7 7 9 6 7 12 9 4 5 7; ...               % D
+                           4 1 8 13 10 9 12 14 16 15 16 17 16 18 19 16 19 23 25 27];   % L
+                else
+                    % Placeholder season with slightly varied stats
+                    teams = { 'Man City','Liverpool','Chelsea','Tottenham','Arsenal','Man United','Newcastle','Brighton','Leicester','Everton','West Ham','Wolves','Burnley','Bournemouth','Southampton','Crystal Palace','Watford','Brentford','Fulham','Luton'};
+                    rng(42); raw = randi([10 30],3,numel(teams));
+                end
+                MP = 37*ones(1,numel(teams));
+                standings = struct('Club',teams,'MP',num2cell(MP),'W',num2cell(raw(1,:)),'D',num2cell(raw(2,:)),'L',num2cell(raw(3,:)), ...
+                                    'GF',num2cell(randi([30 95],1,numel(teams))),'GA',num2cell(randi([20 85],1,numel(teams))));
+                for i=1:numel(standings)
+                    standings(i).GD = standings(i).GF - standings(i).GA;
+                    standings(i).Points = standings(i).W*3 + standings(i).D;
+                end
+                matchdays = 37; rng(sIdx*7);
+                posMatrix = zeros(numel(teams),matchdays);
+                for t=1:numel(teams)
+                    if t<=2
+                        % Strong teams stable near top
+                        base = min(2 + randn(1,matchdays)/3,3);
+                        posMatrix(t,:) = max(1,round([14 base(2:end)]));
+                        posMatrix(t,1) = 14 - (t-1)*7; % start lower then rise
+                    else
+                        walk = cumsum(sign(randn(1,matchdays)));
+                        posMatrix(t,:) = max(min(10 + walk,20),1);
+                    end
+                end
+                % Cards & results
+                cards = struct(); results = struct();
+                for t=1:numel(teams)
+                    nm = matlab.lang.makeValidName(teams{t});
+                    cards.(nm) = struct('Red', randi([0 3]), 'Yellow', randi([20 70]));
+                    results.(nm) = randi([0 2],1,10); % 0=L,1=D,2=W
+                end
+                app.data.(key) = struct('Standings',standings,'Positions',posMatrix,'Matchdays',matchdays,'Cards',cards,'Results',results);
+            end
+        end
+
+        function defineConstants(app)
+            % Define color palette & thresholds used across app
+            app.C = struct();
+            app.C.colors = struct( ...
+                'CL',[0 76 153]/255, ...
+                'EL',[230 103 33]/255, ...
+                'ELQ',[0 155 72]/255, ...
+                'REL',[200 0 0]/255, ...
+                'Neutral',[0.8 0.8 0.8], ...
+                'Highlight',[0 0.45 0.74]);
+            app.C.thresholds = struct('CL',4,'EL',5,'ELQ',6,'REL',[18 20]);
+        end
+
+        function buildUI(app)
+            % Assemble main figure and high-level grid
+            app.fig = uifigure('Name','Premier League Data Visualizations','Position',[100 100 1100 750]);
+            gl = uigridlayout(app.fig,[3 2],'RowHeight',{70,'1x','2x'},'ColumnWidth',{'3x','2x'});
+            app.buildHeader(gl);
+            app.buildStandings(gl);
+            app.buildDetails(gl);
+            app.buildPlot(gl);
+        end
+
+        function buildHeader(app,parent)
+            app.headerPanel = uipanel(parent); app.headerPanel.Layout.Row = 1; app.headerPanel.Layout.Column = [1 2];
+            hgrid = uigridlayout(app.headerPanel,[1 6],'ColumnWidth',{160,'1x',200,150,120,70});
+            uilabel(hgrid,'Text','Premier League','FontWeight','bold','FontSize',18,'HorizontalAlignment','center');
+            app.segmentGroup = uibuttongroup(hgrid,'Title','View Span','TitlePosition','centertop');
+            uiradiobutton(app.segmentGroup,'Text','By Seasons','Position',[10 10 110 20],'Value',true);
+            uiradiobutton(app.segmentGroup,'Text','Last 10 Years','Position',[125 10 120 20]);
+            % Season dropdown will list all available seasons
+            app.seasonDropDown = uidropdown(hgrid,'Items',{'2018-2019','Sample-Next'},'Value',app.selectedSeason,'ValueChangedFcn',@(dd,~)app.updateSeason(dd.Value));
+            uibutton(hgrid,'Text','Help','ButtonPushedFcn',@(btn,~)app.showHelp());
+            uibutton(hgrid,'Text','Team Site','ButtonPushedFcn',@(b,~)app.openTeamSite());
+            uilabel(hgrid,'Text',''); % spacer
+        end
+
+        function buildStandings(app,parent)
+            app.standingsPanel = uipanel(parent,'Title','Standings'); app.standingsPanel.Layout.Row = 2; app.standingsPanel.Layout.Column = 1;
+            tgrid = uigridlayout(app.standingsPanel,[2 1],'RowHeight',{'1x',35});
+            app.standingsTable = uitable(tgrid,'CellSelectionCallback',@(tbl,evt)app.tableSelection(evt),'FontSize',13);
+            app.legendPanel = uipanel(tgrid); app.legendPanel.Layout.Row = 2; app.buildLegend();
+        end
+
+        function buildDetails(app,parent)
+            app.detailsPanel = uipanel(parent,'Title','Team Details'); app.detailsPanel.Layout.Row = 2; app.detailsPanel.Layout.Column = 2;
+            dgrid = uigridlayout(app.detailsPanel,[2 2],'RowHeight',{150,'1x'},'ColumnWidth',{160,'1x'});
+            app.badgeImage = uiimage(dgrid,'ImageSource',''); app.badgeImage.Layout.Row = 1; app.badgeImage.Layout.Column = 1; app.badgeImage.ScaleMethod='fit';
+            app.htmlDetails = uihtml(dgrid,'HTMLSource',''); app.htmlDetails.Layout.Row = 1; app.htmlDetails.Layout.Column = 2; % dynamic HTML will be injected
+            % second row reserved for future extensions (stats etc.)
+        end
+
+        function buildPlot(app,parent)
+            app.plotPanel = uipanel(parent,'Title','Position By MatchDay'); app.plotPanel.Layout.Row = 3; app.plotPanel.Layout.Column = [1 2];
+            app.positionAxes = uiaxes(app.plotPanel); app.positionAxes.YDir='reverse'; ylabel(app.positionAxes,'Position'); xlabel(app.positionAxes,'MatchDay'); app.positionAxes.YLim=[0.5 20.5];
+        end
+
+        function buildLegend(app)
+            lg = uigridlayout(app.legendPanel,[1 5]);
+            makeBlock(lg,'Champions League',[0 76 153]/255);
+            makeBlock(lg,'Europa League',[230 103 33]/255);
+            makeBlock(lg,'Europa Qual',[0 155 72]/255);
+            makeBlock(lg,'Relegated',[200 0 0]/255);
+            makeBlock(lg,'Other',[0.8 0.8 0.8]);
+            function makeBlock(parent,labelText,color)
+                p = uipanel(parent,'BackgroundColor',color); uilabel(p,'Text',labelText,'HorizontalAlignment','center','FontSize',10,'FontColor','w');
+            end
+        end
+
+        function updateSeason(app,season)
+            % Respond to season dropdown change
+            try
+                app.selectedSeason = season;
+                key = matlab.lang.makeValidName(season);
+                app.seasonData = app.data.(key);
+                app.populateStandingsTable();
+                app.renderPositions();
+                app.updateSelection(app.selectedTeam); % refresh details
+            catch ME
+                uialert(app.fig,['Failed to load season: ' ME.message],'Season Error');
+            end
+        end
+
+        function populateStandingsTable(app)
+            % Build table from current seasonData
+            s = app.seasonData.Standings;
+            pts = arrayfun(@(x)x.Points,s); [~,ord] = sort(pts,'descend'); s = s(ord);
+            clubs = {s.Club}'; MP=[s.MP]'; W=[s.W]'; D=[s.D]'; L=[s.L]'; GF=[s.GF]'; GA=[s.GA]'; GD=[s.GD]'; Pts=[s.Points]';
+            if strcmp(app.styleMode,'html'); clubs = app.htmlColorizeRows(clubs); end
+            T = table((1:numel(clubs))',clubs,MP,W,D,L,GF,GA,GD,Pts,'VariableNames',{'Pos','Club','MP','W','D','L','GF','GA','GD','Points'});
+            app.standingsTable.Data = T;
+            app.standingsTable.ColumnSortable = true;
+            app.standingsTable.ColumnWidth = {35,150,40,40,40,40,45,45,45,55};
+            if strcmp(app.styleMode,'uistyle'); app.updateTableStyles(); end
+        end
+
+        function updateTableStyles(app)
+            % Apply color coding to rows based on thresholds
+            c = app.C.colors; th = app.C.thresholds;
+            styles = {uistyle('BackgroundColor',c.CL,'FontColor','w'), ...
+                      uistyle('BackgroundColor',c.EL,'FontColor','w'), ...
+                      uistyle('BackgroundColor',c.ELQ,'FontColor','w'), ...
+                      uistyle('BackgroundColor',c.REL,'FontColor','w')};
+            addStyle(app.standingsTable,styles{1},'row',1:th.CL);
+            addStyle(app.standingsTable,styles{2},'row',th.EL);
+            addStyle(app.standingsTable,styles{3},'row',th.ELQ);
+            addStyle(app.standingsTable,styles{4},'row',th.REL(1):th.REL(2));
+        end
+
+
+        function htmlClubs = htmlColorizeRows(app,clubs)
+            htmlClubs = clubs;
+            for i=1:numel(clubs)
+                color = [1 1 1];
+                if ismember(i,1:4), color=[0 76 153]/255; elseif i==5, color=[230 103 33]/255; elseif i==6, color=[0 155 72]/255; elseif ismember(i,18:20), color=[200 0 0]/255; end
+                if any(color~=1)
+                    hex = sprintf('#%02X%02X%02X',round(color(1)*255),round(color(2)*255),round(color(3)*255));
+                    htmlClubs{i} = sprintf('<html><body style="background-color:%s;color:white;">%s</body></html>',hex,clubs{i});
+                end
+            end
+        end
+
+        function tableSelection(app,evt)
+            % Handle row selection in standings table
+            if isempty(evt.Indices); return; end
+            try
+                row = evt.Indices(1);
+                rawClub = app.standingsTable.Data.Club{row};
+                club = regexprep(rawClub,'<.*?>',''); % strip HTML
+                app.updateSelection(club);
+            catch ME
+                uialert(app.fig,['Selection error: ' ME.message],'Selection');
+            end
+        end
+
+        function updateSelection(app,club)
+            % Update selected team and details panel
+            try
+                app.selectedTeam = club;
+                app.badgeImage.ImageSource = ''; % placeholder for badge path
+                app.updateTeamDetailsHTML();
+                app.renderPositions(); % re-highlight plot
+            catch ME
+                uialert(app.fig,['Failed to update team details: ' ME.message],'Team Error');
+            end
+        end
+
+        function updateTeamDetailsHTML(app)
+            % Compose HTML snippet for team details (cards + last 10 results)
+            club = app.selectedTeam; c = app.seasonData.Cards.(matlab.lang.makeValidName(club));
+            rseq = app.seasonData.Results.(matlab.lang.makeValidName(club));
+            blockHTML = "";
+            for i=1:numel(rseq)
+                switch rseq(i)
+                    case 2, col='#008f2b'; txt='W';
+                    case 1, col='#777777'; txt='D';
+                    otherwise, col='#b00000'; txt='L';
+                end
+                blockHTML = blockHTML + sprintf('<div class="res" style="background:%s">%s</div>',col,txt);
+            end
+            html = sprintf([ ...
+                '<html><head><style>' ...
+                '.title{font-size:18px;font-weight:bold;margin-bottom:6px;}' ...
+                '.cards{margin:8px 0;font-size:12px;}' ...
+                '.res{width:24px;height:24px;display:inline-flex;justify-content:center;align-items:center;color:#fff;font-weight:bold;margin-right:2px;border-radius:4px;font-size:11px;}' ...
+                '</style></head><body>' ...
+                '<div class="title">%s</div>' ...
+                '<div class="cards">Red: <b>%d</b> | Yellow: <b>%d</b></div>' ...
+                '<div>%s</div>' ...
+                '</body></html>'],club,c.Red,c.Yellow,blockHTML);
+            app.htmlDetails.HTMLSource = html;
+        end
+
+        function renderPositions(app)
+            % Plot position trajectories highlighting selected team
+            cla(app.positionAxes); hold(app.positionAxes,'on');
+            posMatrix = app.seasonData.Positions; mdays = 1:app.seasonData.Matchdays; clubs = {app.seasonData.Standings.Club};
+            pts = arrayfun(@(x)x.Points, app.seasonData.Standings); [~,ord] = sort(pts,'descend'); clubs = clubs(ord); posMatrix = posMatrix(ord,:);
+            for i=1:numel(clubs)
+                colNeutral = [0.75 0.75 0.75];
+                colHighlight = app.C.colors.Highlight;
+                if strcmp(clubs{i},app.selectedTeam)
+                    plot(app.positionAxes, mdays, posMatrix(i,:),'-o','Color',colHighlight,'MarkerFaceColor',colHighlight,'LineWidth',2.2);
+                    text(app.positionAxes, mdays(end)+0.3, posMatrix(i,end), clubs{i},'Color',colHighlight,'FontWeight','bold');
+                else
+                    plot(app.positionAxes, mdays, posMatrix(i,:),'-','Color',colNeutral,'LineWidth',0.5);
+                end
+            end
+            app.positionAxes.YLim=[0.5 20.5]; app.positionAxes.XLim=[1 mdays(end)]; app.positionAxes.YGrid='on'; app.positionAxes.XGrid='on';
+            title(app.positionAxes,'Position By MatchDay'); hold(app.positionAxes,'off');
+        end
+
+        function openTeamSite(app)
+            % Simple mapping; extend as needed.
+            urls = struct('ManCity','https://www.mancity.com','Liverpool','https://www.liverpoolfc.com');
+            fn = matlab.lang.makeValidName(strrep(app.selectedTeam,' ','')); % Remove spaces
+            if isfield(urls,fn)
+                web(urls.(fn),'-browser');
+            else
+                web('https://www.premierleague.com','-browser');
+            end
+        end
+
+        function showHelp(app)
+            uialert(app.fig,'Select a team in the table to view details, cards, and recent form. Extend seasons by editing loadData().','Help');
+        end
+    end
+end

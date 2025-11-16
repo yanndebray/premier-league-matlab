@@ -32,6 +32,9 @@ classdef PremierLeagueApp < handle
         styleMode char = 'uistyle' % 'uistyle' or 'html'
         % Constant configuration (colors, thresholds)
         C struct
+        % External API config and cache
+        sportsDbApiKey char = '123'
+        badgeCache
     end
 
     methods
@@ -40,6 +43,7 @@ classdef PremierLeagueApp < handle
             app.defineConstants();     % Colors & thresholds
             app.loadData();            % Load season data
             app.buildUI();             % Compose UI sections
+            app.badgeCache = containers.Map('KeyType','char','ValueType','char');
             app.updateSeason(app.selectedSeason); % Populate initial season
             app.updateSelection(app.selectedTeam);% Populate team details
         end
@@ -272,11 +276,98 @@ classdef PremierLeagueApp < handle
             % Update selected team and details panel
             try
                 app.selectedTeam = club;
-                app.badgeImage.ImageSource = ''; % placeholder for badge path
+                % Attempt to fetch and display team badge from TheSportsDB
+                badgeUrl = app.getBadgeUrlForTeam(club);
+                if ~isempty(badgeUrl)
+                    app.setBadgeFromUrl(badgeUrl);
+                else
+                    app.badgeImage.ImageSource = '';
+                end
                 app.updateTeamDetailsHTML();
                 app.renderPositions(); % re-highlight plot
             catch ME
                 uialert(app.fig,['Failed to update team details: ' ME.message],'Team Error');
+            end
+        end
+
+        function setBadgeFromUrl(app,url)
+            % Set badge image by downloading and loading image data
+            try
+                if isempty(url)
+                    app.badgeImage.ImageSource = '';
+                    return;
+                end
+                % Download image data using webread with options
+                opts = weboptions('Timeout', 10, 'ContentType', 'binary');
+                imgData = webread(url, opts);
+                % Write to temporary file and read back
+                [~, ~, ext] = fileparts(url);
+                if isempty(ext) || ~startsWith(ext, '.'); ext = '.png'; end
+                tempFile = [tempname ext];
+                fid = fopen(tempFile, 'wb');
+                fwrite(fid, imgData, 'uint8');
+                fclose(fid);
+                % Load image and set
+                img = imread(tempFile);
+                app.badgeImage.ImageSource = img;
+                % Clean up temp file
+                delete(tempFile);
+            catch
+                % Fallback: try direct URL (works in newer MATLAB)
+                try
+                    app.badgeImage.ImageSource = url;
+                catch
+                    app.badgeImage.ImageSource = '';
+                end
+            end
+        end
+
+        function url = getBadgeUrlForTeam(app,club)
+            % Query TheSportsDB for a team's badge URL (strBadge)
+            % Uses a small mapping to canonical names and caches results
+            import matlab.net.URI
+            import matlab.net.QueryParameter
+            url = '';
+            try
+                name = app.canonicalTeamName(club);
+                if isKey(app.badgeCache,name)
+                    url = app.badgeCache(name); return; 
+                end
+                base = URI('https://www.thesportsdb.com/api/v1/json');
+                base.Path(end+1) = app.sportsDbApiKey; %#ok<AGROW>
+                base.Path(end+1) = 'searchteams.php'; %#ok<AGROW>
+                base.Query = QueryParameter('t',name);
+                resp = webread(string(base));
+                if isstruct(resp) && isfield(resp,'teams') && ~isempty(resp.teams)
+                    rec = resp.teams(1);
+                    if isfield(rec,'strBadge') && ~isempty(rec.strBadge)
+                        badgeUrl = strtrim(rec.strBadge);
+                        % Validate URL is complete (has file extension)
+                        if contains(badgeUrl, '.') && (startsWith(badgeUrl, 'http://') || startsWith(badgeUrl, 'https://'))
+                            url = badgeUrl;
+                            app.badgeCache(name) = url;
+                        end
+                    end
+                end
+            catch
+                % Ignore errors (offline or API down). Badge will remain blank.
+            end
+        end
+
+        function name = canonicalTeamName(~,club)
+            % Map dataset names to common official names for API queries
+            switch strtrim(club)
+                case 'Man City',      name = 'Manchester City';
+                case 'Man United',    name = 'Manchester United';
+                case 'Wolves',        name = 'Wolverhampton Wanderers';
+                case 'West Ham',      name = 'West Ham United';
+                case 'Leicester',     name = 'Leicester City';
+                case 'Newcastle',     name = 'Newcastle United';
+                case 'Bournemouth',   name = 'AFC Bournemouth';
+                case 'Brighton',      name = 'Brighton & Hove Albion';
+                case 'Huddersfield',  name = 'Huddersfield Town';
+                case 'Cardiff',       name = 'Cardiff City';
+                otherwise,            name = club;
             end
         end
 

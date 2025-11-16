@@ -1,8 +1,8 @@
-# Premier League MATLAB App
+# Premier League MATLAB App [![Open in MATLAB Online](https://www.mathworks.com/images/responsive/global/open-in-matlab-online.svg)](https://matlab.mathworks.com/open/github/v1?repo=yanndebray/premier-league-matlab)
 
 This repository contains a MATLAB programmatic UI (`PremierLeagueApp`) that replicates the core layout and interactions of the provided Premier League visualization screenshot.
 
-![v0.5](img/v0.5.png)
+https://github.com/user-attachments/assets/049d885a-9430-4fe2-8f47-1887f9b42c18
 
 ## Features
 - Standings table with row color coding (Champions League, Europa League, Qualifiers, Relegated) using `uistyle` when available (falls back to HTML cell styling).

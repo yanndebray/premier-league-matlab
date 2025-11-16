@@ -148,10 +148,13 @@ classdef PremierLeagueApp < handle
         end
 
         function buildStandings(app,parent)
-            app.standingsPanel = uipanel(parent,'Title','Standings'); app.standingsPanel.Layout.Row = 2; app.standingsPanel.Layout.Column = 1;
+            app.standingsPanel = uipanel(parent,'Title','Standings'); app.standingsPanel.Layout.Row = 2; app.standingsPanel.Layout.Column = 1; app.standingsPanel.AutoResizeChildren = 'off';
             tgrid = uigridlayout(app.standingsPanel,[2 1],'RowHeight',{'1x',35});
+            tgrid.Padding = [5 5 5 5];
             app.standingsTable = uitable(tgrid,'CellSelectionCallback',@(tbl,evt)app.tableSelection(evt),'FontSize',13);
             app.legendPanel = uipanel(tgrid); app.legendPanel.Layout.Row = 2; app.buildLegend();
+            % Make table fill width by resizing columns on panel size change
+            app.standingsPanel.SizeChangedFcn = @(~,~)app.autoSizeStandings();
         end
 
         function buildDetails(app,parent)
@@ -204,8 +207,26 @@ classdef PremierLeagueApp < handle
             T = table((1:numel(clubs))',clubs,MP,W,D,L,GF,GA,GD,Pts,'VariableNames',{'Pos','Club','MP','W','D','L','GF','GA','GD','Points'});
             app.standingsTable.Data = T;
             app.standingsTable.ColumnSortable = true;
-            app.standingsTable.ColumnWidth = {40,160,45,40,40,40,45,45,50,60};
+            % Initial widths; autoSizeStandings will stretch to container
+            app.standingsTable.ColumnWidth = {40,200,50,45,45,45,50,50,55,60};
+            app.autoSizeStandings();
             if strcmp(app.styleMode,'uistyle'); app.updateTableStyles(); end
+        end
+
+        function autoSizeStandings(app)
+            % Dynamically size table columns to occupy full width of standings panel
+            try
+                if isempty(app.standingsTable) || isempty(app.standingsTable.Data); return; end
+                avail = app.standingsPanel.Position(3) - 20; % subtract padding/scrollbar
+                if avail <= 200; return; end
+                % Fixed widths for non-Club columns: Pos, MP, W, D, L, GF, GA, GD, Points
+                fixed = [40, 50,45,45,45,50,50,55,60];
+                fixedSum = sum(fixed);
+                clubWidth = max(160, avail - fixedSum);
+                app.standingsTable.ColumnWidth = num2cell([fixed(1) clubWidth fixed(2:end)]);
+            catch
+                % Gracefully ignore early layout passes
+            end
         end
 
         function updateTableStyles(app)

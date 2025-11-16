@@ -2,7 +2,7 @@
 
 This repository contains a MATLAB programmatic UI (`PremierLeagueApp`) that replicates the core layout and interactions of the provided Premier League visualization screenshot.
 
-![v0.4](img/v0.4.png)
+![v0.5](img/v0.5.png)
 
 ## Features
 - Standings table with row color coding (Champions League, Europa League, Qualifiers, Relegated) using `uistyle` when available (falls back to HTML cell styling).

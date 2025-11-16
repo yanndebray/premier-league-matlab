@@ -130,48 +130,76 @@ classdef PremierLeagueApp < handle
         function buildUI(app)
             % Assemble main figure and high-level grid
             app.fig = uifigure('Name','Premier League Data Visualizations','Position',[100 100 1100 750]);
-            gl = uigridlayout(app.fig,[3 2],'RowHeight',{70,'1x','2x'},'ColumnWidth',{'3x','2x'});
-            app.buildHeader(gl);
-            app.buildStandings(gl);
-            app.buildDetails(gl);
-            app.buildPlot(gl);
+            % Two columns: left panel (header + team details) and right panel (standings + plot)
+            gl = uigridlayout(app.fig,[1 2],'RowHeight',{'1x'},'ColumnWidth',{'1x','2x'});
+            app.buildLeftPanel(gl);   % Col1: header + team details vertically
+            app.buildRightPanel(gl);  % Col2: standings + plot vertically
+        end
+        
+        function buildLeftPanel(app,parent)
+            % Left panel contains header and team details stacked vertically
+            leftPanel = uipanel(parent,'BorderType','none'); 
+            leftPanel.Layout.Row = 1; 
+            leftPanel.Layout.Column = 1;
+            leftGrid = uigridlayout(leftPanel,[2 1],'RowHeight',{280,'1x'},'Padding',[5 5 5 5]);
+            app.buildHeader(leftGrid);   % Top of left panel
+            app.buildDetails(leftGrid);  % Bottom of left panel
+        end
+        
+        function buildRightPanel(app,parent)
+            % Right panel contains standings table on top and position plot below
+            rightPanel = uipanel(parent,'BorderType','none'); 
+            rightPanel.Layout.Row = 1; 
+            rightPanel.Layout.Column = 2;
+            rightGrid = uigridlayout(rightPanel,[2 1],'RowHeight',{'1x','1x'},'Padding',[5 5 5 5]);
+            app.buildStandings(rightGrid);  % Top of right panel
+            app.buildPlot(rightGrid);       % Bottom of right panel
         end
 
         function buildHeader(app,parent)
-            app.headerPanel = uipanel(parent); app.headerPanel.Layout.Row = 1; app.headerPanel.Layout.Column = [1 2];
-            hgrid = uigridlayout(app.headerPanel,[1 6],'ColumnWidth',{160,'1x',200,150,120,70});
+            app.headerPanel = uipanel(parent,'Title','Controls'); 
+            app.headerPanel.Layout.Row = 1; 
+            app.headerPanel.Layout.Column = 1;
+            hgrid = uigridlayout(app.headerPanel,[5 1],'RowHeight',{30,70,30,30,30},'Padding',[10 10 10 10]);
             uilabel(hgrid,'Text','Premier League','FontWeight','bold','FontSize',18,'HorizontalAlignment','center');
             app.segmentGroup = uibuttongroup(hgrid,'Title','View Span','TitlePosition','centertop');
-            uiradiobutton(app.segmentGroup,'Text','By Seasons','Position',[10 10 110 20],'Value',true);
-            uiradiobutton(app.segmentGroup,'Text','Last 10 Years','Position',[125 10 120 20]);
-            % Season dropdown will list all available seasons
+            uiradiobutton(app.segmentGroup,'Text','By Seasons','Position',[10 30 110 20],'Value',true);
+            uiradiobutton(app.segmentGroup,'Text','Last 10 Years','Position',[10 5 120 20]);
+            uilabel(hgrid,'Text','Season:','FontWeight','bold');
             app.seasonDropDown = uidropdown(hgrid,'Items',{'2018-2019','Sample-Next'},'Value',app.selectedSeason,'ValueChangedFcn',@(dd,~)app.updateSeason(dd.Value));
-            uibutton(hgrid,'Text','Help','ButtonPushedFcn',@(btn,~)app.showHelp());
-            uibutton(hgrid,'Text','Team Site','ButtonPushedFcn',@(b,~)app.openTeamSite());
-            uilabel(hgrid,'Text',''); % spacer
+            uibutton(hgrid,'Text','Help','ButtonPushedFcn',@(btn,~)app.showHelp(),'FontSize',14);
         end
 
         function buildStandings(app,parent)
-            app.standingsPanel = uipanel(parent,'Title','Standings'); app.standingsPanel.Layout.Row = 2; app.standingsPanel.Layout.Column = 1; app.standingsPanel.AutoResizeChildren = 'off';
+            app.standingsPanel = uipanel(parent,'Title','Standings'); 
+            app.standingsPanel.Layout.Row = 1; 
+            app.standingsPanel.Layout.Column = 1; 
+            app.standingsPanel.AutoResizeChildren = 'off';
             tgrid = uigridlayout(app.standingsPanel,[2 1],'RowHeight',{'1x',35});
             tgrid.Padding = [5 5 5 5];
             app.standingsTable = uitable(tgrid,'CellSelectionCallback',@(tbl,evt)app.tableSelection(evt),'FontSize',13);
             app.legendPanel = uipanel(tgrid); app.legendPanel.Layout.Row = 2; app.buildLegend();
-            % Make table fill width by resizing columns on panel size change
-            app.standingsPanel.SizeChangedFcn = @(~,~)app.autoSizeStandings();
+            % Removed dynamic SizeChangedFcn to avoid runtime handle issues; manual sizing done in populateStandingsTable.
         end
 
         function buildDetails(app,parent)
-            app.detailsPanel = uipanel(parent,'Title','Team Details'); app.detailsPanel.Layout.Row = 2; app.detailsPanel.Layout.Column = 2;
-            dgrid = uigridlayout(app.detailsPanel,[2 2],'RowHeight',{150,'1x'},'ColumnWidth',{160,'1x'});
-            app.badgeImage = uiimage(dgrid,'ImageSource',''); app.badgeImage.Layout.Row = 1; app.badgeImage.Layout.Column = 1; app.badgeImage.ScaleMethod='fit';
-            app.htmlDetails = uihtml(dgrid,'HTMLSource',''); app.htmlDetails.Layout.Row = 1; app.htmlDetails.Layout.Column = 2; % dynamic HTML will be injected
-            % second row reserved for future extensions (stats etc.)
+            app.detailsPanel = uipanel(parent,'Title','Team Details'); 
+            app.detailsPanel.Layout.Row = 2; 
+            app.detailsPanel.Layout.Column = 1;
+            % Smaller badge height and remaining space for HTML details
+            dgrid = uigridlayout(app.detailsPanel,[2 1],'RowHeight',{120,'1x'});
+            dgrid.Padding = [5 5 5 5];
+            app.badgeImage = uiimage(dgrid,'ImageSource',''); app.badgeImage.Layout.Row = 1; app.badgeImage.ScaleMethod='fit';
+            app.htmlDetails = uihtml(dgrid,'HTMLSource',''); app.htmlDetails.Layout.Row = 2; % dynamic HTML will be injected
         end
 
         function buildPlot(app,parent)
-            app.plotPanel = uipanel(parent,'Title','Position By MatchDay'); app.plotPanel.Layout.Row = 3; app.plotPanel.Layout.Column = [1 2];
+            app.plotPanel = uipanel(parent,'Title','Position By MatchDay','AutoResizeChildren','off'); 
+            app.plotPanel.Layout.Row = 2; 
+            app.plotPanel.Layout.Column = 1;
             app.positionAxes = uiaxes(app.plotPanel); app.positionAxes.YDir='reverse'; ylabel(app.positionAxes,'Position'); xlabel(app.positionAxes,'MatchDay'); app.positionAxes.YLim=[0.5 20.5];
+            % Ensure axes fill the whole panel using SizeChangedFcn
+            app.plotPanel.SizeChangedFcn = @(~,~) set(app.positionAxes,'Position',[10 10 app.plotPanel.Position(3)-20 app.plotPanel.Position(4)-40]);
         end
 
         function buildLegend(app)
@@ -212,7 +240,7 @@ classdef PremierLeagueApp < handle
             app.standingsTable.Data = T;
             app.standingsTable.ColumnSortable = true;
             % Initial widths; autoSizeStandings will stretch to container
-            app.standingsTable.ColumnWidth = {40,200,50,45,45,45,50,50,55,60};
+            app.standingsTable.ColumnWidth = {35,140,40,40,40,40,45,45,50,55};
             app.autoSizeStandings();
             if strcmp(app.styleMode,'uistyle'); app.updateTableStyles(); end
         end
@@ -221,12 +249,12 @@ classdef PremierLeagueApp < handle
             % Dynamically size table columns to occupy full width of standings panel
             try
                 if isempty(app.standingsTable) || isempty(app.standingsTable.Data); return; end
-                avail = app.standingsPanel.Position(3) - 20; % subtract padding/scrollbar
+                avail = app.standingsPanel.Position(3) - 5; % subtract minimal padding
                 if avail <= 200; return; end
                 % Fixed widths for non-Club columns: Pos, MP, W, D, L, GF, GA, GD, Points
-                fixed = [40, 50,45,45,45,50,50,55,60];
+                fixed = [35, 40,40,40,40,45,45,50,55];
                 fixedSum = sum(fixed);
-                clubWidth = max(160, avail - fixedSum);
+                clubWidth = max(120, avail - fixedSum);
                 app.standingsTable.ColumnWidth = num2cell([fixed(1) clubWidth fixed(2:end)]);
             catch
                 % Gracefully ignore early layout passes
